@@ -15,11 +15,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.media3.common.Player
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -70,6 +75,12 @@ fun NowPlayingScreen(onClose: () -> Unit) {
 
   BackHandler(onBack = onClose)
 
+  var queueOpen by remember { mutableStateOf(false) }
+  if (queueOpen) {
+    QueueScreen(onClose = { queueOpen = false })
+    return
+  }
+
   Scaffold(
     topBar = {
       TopAppBar(
@@ -77,6 +88,14 @@ fun NowPlayingScreen(onClose: () -> Unit) {
         navigationIcon = {
           IconButton(onClick = onClose) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+          }
+        },
+        actions = {
+          IconButton(onClick = { queueOpen = true }) {
+            Icon(
+              imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+              contentDescription = "Queue",
+            )
           }
         },
       )
@@ -218,13 +237,56 @@ fun NowPlayingScreen(onClose: () -> Unit) {
         }
       }
 
-      if (state.queueSize > 0 && state.currentIndex >= 0) {
-        Spacer(Modifier.height(16.dp))
-        Text(
-          text = "${state.currentIndex + 1} / ${state.queueSize}",
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+      Spacer(Modifier.height(8.dp))
+
+      // Shuffle and repeat (Phase E). Both default to off, so Phase D
+      // behaviour is unchanged until the user toggles them.
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+      ) {
+        IconButton(onClick = { controller.setShuffleEnabled(!state.shuffleEnabled) }) {
+          Icon(
+            imageVector = Icons.Filled.Shuffle,
+            contentDescription = if (state.shuffleEnabled) "Shuffle on" else "Shuffle off",
+            tint = if (state.shuffleEnabled) {
+              MaterialTheme.colorScheme.primary
+            } else {
+              MaterialTheme.colorScheme.onSurfaceVariant
+            },
+          )
+        }
+
+        if (state.queueSize > 0 && state.currentIndex >= 0) {
+          Text(
+            text = "${state.currentIndex + 1} / ${state.queueSize}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        } else {
+          Spacer(Modifier.size(1.dp))
+        }
+
+        IconButton(onClick = { controller.cycleRepeatMode() }) {
+          Icon(
+            imageVector = if (state.repeatMode == Player.REPEAT_MODE_ONE) {
+              Icons.Filled.RepeatOne
+            } else {
+              Icons.Filled.Repeat
+            },
+            contentDescription = when (state.repeatMode) {
+              Player.REPEAT_MODE_ONE -> "Repeat one"
+              Player.REPEAT_MODE_ALL -> "Repeat all"
+              else -> "Repeat off"
+            },
+            tint = if (state.repeatMode != Player.REPEAT_MODE_OFF) {
+              MaterialTheme.colorScheme.primary
+            } else {
+              MaterialTheme.colorScheme.onSurfaceVariant
+            },
+          )
+        }
       }
     }
   }
