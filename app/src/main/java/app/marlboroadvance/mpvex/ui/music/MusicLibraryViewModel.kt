@@ -8,6 +8,10 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.marlboroadvance.mpvex.data.music.MusicLibraryRepository
 import app.marlboroadvance.mpvex.domain.music.MusicLibrary
+import app.marlboroadvance.mpvex.domain.music.PlaybackQueue
+import app.marlboroadvance.mpvex.domain.music.Song
+import app.marlboroadvance.mpvex.playback.MusicPlayerController
+import app.marlboroadvance.mpvex.playback.MusicPlayerState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,9 +31,17 @@ sealed interface MusicUiState {
 class MusicLibraryViewModel(application: Application) : AndroidViewModel(application) {
 
   private val repository = MusicLibraryRepository(application)
+  private val playerController = MusicPlayerController.getInstance(application)
 
   private val _uiState = MutableStateFlow<MusicUiState>(MusicUiState.Loading)
   val uiState: StateFlow<MusicUiState> = _uiState.asStateFlow()
+
+  /** Live state of the music player, mirrored from the playback service. */
+  val playerState: StateFlow<MusicPlayerState> = playerController.state
+
+  init {
+    playerController.connect()
+  }
 
   /**
    * (Re)loads the library from MediaStore. When content is already shown the
@@ -48,6 +60,21 @@ class MusicLibraryViewModel(application: Application) : AndroidViewModel(applica
       val library = withContext(Dispatchers.IO) { repository.loadLibrary() }
       _uiState.value = MusicUiState.Loaded(library)
     }
+  }
+
+  /**
+   * Starts playback of [song]. The queue continues through [contextSongs] —
+   * the visible list the song was tapped in (Songs tab, an album, an artist,
+   * a folder, or search results), in display order.
+   */
+  fun playSong(song: Song, contextSongs: List<Song>) {
+    val plan = PlaybackQueue.plan(contextSongs, song) ?: return
+    val artworkUriByAlbumId = (_uiState.value as? MusicUiState.Loaded)
+      ?.library
+      ?.albums
+      ?.associate { album -> album.id to album.artworkUri }
+      ?: emptyMap()
+    playerController.playQueue(plan.songs, plan.startIndex, artworkUriByAlbumId)
   }
 
   companion object {

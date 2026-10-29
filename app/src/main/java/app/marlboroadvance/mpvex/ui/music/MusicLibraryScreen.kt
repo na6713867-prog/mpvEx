@@ -43,8 +43,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -58,7 +56,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -78,10 +75,11 @@ import app.marlboroadvance.mpvex.domain.music.Album
 import app.marlboroadvance.mpvex.domain.music.Artist
 import app.marlboroadvance.mpvex.domain.music.MusicFolder
 import app.marlboroadvance.mpvex.domain.music.MusicLibrary
+import app.marlboroadvance.mpvex.domain.music.Song
+import app.marlboroadvance.mpvex.playback.MusicPlayerState
 import app.marlboroadvance.mpvex.presentation.Screen
 import app.marlboroadvance.mpvex.ui.browser.LocalNavigationBarHeight
 import app.marlboroadvance.mpvex.ui.browser.states.EmptyState
-import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
 /** The Music tab: local music library (songs, albums, artists, folders). */
@@ -95,6 +93,7 @@ object MusicLibraryScreen : Screen {
       factory = MusicLibraryViewModel.factory(context.applicationContext as Application),
     )
     val uiState by viewModel.uiState.collectAsState()
+    val playerState by viewModel.playerState.collectAsState()
 
     val permissionLauncher = rememberLauncherForActivityResult(
       contract = ActivityResultContracts.RequestPermission(),
@@ -139,7 +138,11 @@ object MusicLibraryScreen : Screen {
       }
 
       is MusicUiState.Loaded -> {
-        MusicLibraryContent(library = state.library)
+        MusicLibraryContent(
+          library = state.library,
+          playerState = playerState,
+          onSongPlay = viewModel::playSong,
+        )
       }
     }
   }
@@ -164,7 +167,11 @@ private val TAB_TITLES = listOf("Songs", "Albums", "Artists", "Folders")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MusicLibraryContent(library: MusicLibrary) {
+private fun MusicLibraryContent(
+  library: MusicLibrary,
+  playerState: MusicPlayerState,
+  onSongPlay: (Song, List<Song>) -> Unit,
+) {
   var selectedTab by rememberSaveable { mutableIntStateOf(0) }
   var query by rememberSaveable { mutableStateOf("") }
   var searchActive by rememberSaveable { mutableStateOf(false) }
@@ -173,14 +180,17 @@ private fun MusicLibraryContent(library: MusicLibrary) {
   var sortMenuOpen by remember { mutableStateOf(false) }
   var detail by remember { mutableStateOf<MusicDetail?>(null) }
 
-  val snackbarHostState = remember { SnackbarHostState() }
-  val scope = rememberCoroutineScope()
   val bottomPadding = LocalNavigationBarHeight.current + 16.dp
 
-  val onSongClick: () -> Unit = {
-    scope.launch {
-      snackbarHostState.showSnackbar("Playback is coming in a later phase")
-    }
+  var nowPlayingOpen by remember { mutableStateOf(false) }
+  val onSongClick: (Song, List<Song>) -> Unit = { song, contextSongs ->
+    onSongPlay(song, contextSongs)
+    nowPlayingOpen = true
+  }
+
+  if (nowPlayingOpen) {
+    NowPlayingScreen(onClose = { nowPlayingOpen = false })
+    return
   }
 
   BackHandler(enabled = detail != null) {
@@ -188,7 +198,6 @@ private fun MusicLibraryContent(library: MusicLibrary) {
   }
 
   Scaffold(
-    snackbarHost = { SnackbarHost(snackbarHostState) },
     topBar = {
       Column {
         TopAppBar(
@@ -201,6 +210,14 @@ private fun MusicLibraryContent(library: MusicLibrary) {
             }
           },
           actions = {
+            if (detail == null && playerState.currentSongId != null) {
+              IconButton(onClick = { nowPlayingOpen = true }) {
+                Icon(
+                  imageVector = Icons.Filled.MusicNote,
+                  contentDescription = "Now playing",
+                )
+              }
+            }
             if (detail == null && library.songs.isNotEmpty()) {
               IconButton(
                 onClick = {
@@ -377,7 +394,7 @@ private fun SongsTab(
   query: String,
   songSort: SongSort,
   ascending: Boolean,
-  onSongClick: () -> Unit,
+  onSongClick: (Song, List<Song>) -> Unit,
   bottomPadding: Dp,
 ) {
   val songs = MusicLibraryFilter.sortSongs(
@@ -394,7 +411,7 @@ private fun SongsTab(
     contentPadding = PaddingValues(bottom = bottomPadding),
   ) {
     items(songs, key = { it.id }) { song ->
-      SongRow(song = song, onClick = onSongClick)
+      SongRow(song = song, onClick = { onSongClick(song, songs) })
     }
   }
 }
@@ -487,7 +504,7 @@ private fun FoldersTab(
 private fun DetailContent(
   detail: MusicDetail,
   library: MusicLibrary,
-  onSongClick: () -> Unit,
+  onSongClick: (Song, List<Song>) -> Unit,
   bottomPadding: Dp,
 ) {
   val songs = when (detail) {
@@ -503,7 +520,7 @@ private fun DetailContent(
       DetailHeader(detail = detail)
     }
     items(songs, key = { it.id }) { song ->
-      SongRow(song = song, onClick = onSongClick)
+      SongRow(song = song, onClick = { onSongClick(song, songs) })
     }
   }
 }
