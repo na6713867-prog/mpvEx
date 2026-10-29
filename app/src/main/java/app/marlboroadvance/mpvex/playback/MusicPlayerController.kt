@@ -11,6 +11,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import app.marlboroadvance.mpvex.domain.music.PlaybackQueue
 import app.marlboroadvance.mpvex.domain.music.Song
 import com.google.common.util.concurrent.FutureCallback
 import com.google.common.util.concurrent.Futures
@@ -27,6 +28,14 @@ import kotlinx.coroutines.launch
 /** MediaItem extras key carrying the song's MediaStore album id. */
 private const val EXTRA_ALBUM_ID = "app.marlboroadvance.mpvex.playback.ALBUM_ID"
 
+/** One entry of the playback queue, as shown on the queue screen (Phase E). */
+data class QueueItem(
+  val songId: Long,
+  val title: String,
+  val artist: String,
+  val albumId: Long?,
+)
+
 /** A snapshot of the music player's state for the UI. */
 data class MusicPlayerState(
   val isConnected: Boolean = false,
@@ -42,6 +51,9 @@ data class MusicPlayerState(
   val durationMs: Long = 0L,
   val hasNext: Boolean = false,
   val hasPrevious: Boolean = false,
+  val shuffleEnabled: Boolean = false,
+  val repeatMode: Int = Player.REPEAT_MODE_OFF,
+  val queueItems: List<QueueItem> = emptyList(),
 )
 
 /**
@@ -158,6 +170,57 @@ class MusicPlayerController private constructor(context: Context) {
     controller?.seekTo(positionMs.coerceAtLeast(0L))
   }
 
+  /** Turns shuffle on or off (Phase E). */
+  fun setShuffleEnabled(enabled: Boolean) {
+    val player = controller ?: return
+    player.shuffleModeEnabled = enabled
+    refresh(player)
+  }
+
+  /** Cycles repeat: off -> all -> one -> off (Phase E). */
+  fun cycleRepeatMode() {
+    val player = controller ?: return
+    player.repeatMode = when (player.repeatMode) {
+      Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+      Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+      else -> Player.REPEAT_MODE_OFF
+    }
+    refresh(player)
+  }
+
+  /**
+   * Moves the queue item at [fromIndex] to [toIndex] (Phase E). The
+   * parallel MediaStore duration list moves with it, so the seek-bar
+   * duration fallback from Phase D keeps matching the playing song.
+   */
+  fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+    val player = controller ?: return
+    if (fromIndex !in 0 until player.mediaItemCount) return
+    if (toIndex !in 0 until player.mediaItemCount) return
+    if (fromIndex == toIndex) return
+    player.moveMediaItem(fromIndex, toIndex)
+    queueDurationsMs = PlaybackQueue.moved(queueDurationsMs, fromIndex, toIndex)
+    refresh(player)
+  }
+
+  /** Removes the queue item at [index] (Phase E); durations stay in sync. */
+  fun removeQueueItem(index: Int) {
+    val player = controller ?: return
+    if (index !in 0 until player.mediaItemCount) return
+    player.removeMediaItem(index)
+    queueDurationsMs = PlaybackQueue.removedAt(queueDurationsMs, index)
+    refresh(player)
+  }
+
+  /** Starts playing the queue item at [index] (Phase E). */
+  fun playQueueItem(index: Int) {
+    val player = controller ?: return
+    if (index !in 0 until player.mediaItemCount) return
+    player.seekTo(index, 0L)
+    player.play()
+    refresh(player)
+  }
+
   private fun playQueueInternal(player: Player, pending: PendingQueue) {
     val items = pending.songs.map { song ->
       song.toMediaItem(pending.artworkUriByAlbumId[song.albumId])
@@ -205,6 +268,20 @@ class MusicPlayerController private constructor(context: Context) {
         ?: 0L,
       hasNext = player.hasNextMediaItem(),
       hasPrevious = player.hasPreviousMediaItem(),
+      shuffleEnabled = player.shuffleModeEnabled,
+      repeatMode = player.repeatMode,
+      queueItems = (0 until player.mediaItemCount).map { index ->
+        val queueItem = player.getMediaItemAt(index)
+        val queueMetadata = queueItem.mediaMetadata
+        QueueItem(
+          songId = queueItem.mediaId.toLongOrNull() ?: -1L,
+          title = queueMetadata.title?.toString() ?: "Unknown title",
+          artist = queueMetadata.artist?.toString() ?: "Unknown artist",
+          albumId = queueMetadata.extras
+            ?.takeIf { it.containsKey(EXTRA_ALBUM_ID) }
+            ?.getLong(EXTRA_ALBUM_ID),
+        )
+      },
     )
   }
 

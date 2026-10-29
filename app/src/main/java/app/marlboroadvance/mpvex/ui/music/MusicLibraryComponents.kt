@@ -13,9 +13,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,6 +42,9 @@ fun SongRow(
   song: Song,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
+  isFavorite: Boolean = false,
+  onToggleFavorite: (() -> Unit)? = null,
+  onAddToPlaylist: (() -> Unit)? = null,
 ) {
   Row(
     modifier = modifier
@@ -74,6 +81,37 @@ fun SongRow(
       style = MaterialTheme.typography.bodyMedium,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+    // Phase E: optional playlist / favorite actions. Callers that pass no
+    // handlers keep the exact Phase C/D row.
+    if (onAddToPlaylist != null) {
+      IconButton(onClick = onAddToPlaylist) {
+        Icon(
+          imageVector = Icons.Filled.PlaylistAdd,
+          contentDescription = "Add to playlist",
+        )
+      }
+    }
+    if (onToggleFavorite != null) {
+      IconButton(onClick = onToggleFavorite) {
+        Icon(
+          imageVector = if (isFavorite) {
+            Icons.Filled.Favorite
+          } else {
+            Icons.Filled.FavoriteBorder
+          },
+          contentDescription = if (isFavorite) {
+            "Remove from favorites"
+          } else {
+            "Add to favorites"
+          },
+          tint = if (isFavorite) {
+            MaterialTheme.colorScheme.primary
+          } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+          },
+        )
+      }
+    }
   }
 }
 

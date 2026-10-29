@@ -45,7 +45,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -77,9 +77,12 @@ import app.marlboroadvance.mpvex.domain.music.MusicFolder
 import app.marlboroadvance.mpvex.domain.music.MusicLibrary
 import app.marlboroadvance.mpvex.domain.music.Song
 import app.marlboroadvance.mpvex.playback.MusicPlayerState
+import app.marlboroadvance.mpvex.data.music.MusicPlaylistEntity
+import app.marlboroadvance.mpvex.data.music.MusicPlaylistItemEntity
 import app.marlboroadvance.mpvex.presentation.Screen
 import app.marlboroadvance.mpvex.ui.browser.LocalNavigationBarHeight
 import app.marlboroadvance.mpvex.ui.browser.states.EmptyState
+import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
 
 /** The Music tab: local music library (songs, albums, artists, folders). */
@@ -88,12 +91,25 @@ object MusicLibraryScreen : Screen {
 
   @Composable
   override fun Content() {
+    Content(onOpenNowPlaying = {})
+  }
+
+  /**
+   * [onOpenNowPlaying] is supplied by MainScreen (Phase E): Now Playing is
+   * hosted there so the mini-player on every tab can open it. The no-arg
+   * override keeps the Screen interface contract.
+   */
+  @Composable
+  fun Content(onOpenNowPlaying: () -> Unit) {
     val context = LocalContext.current
     val viewModel: MusicLibraryViewModel = viewModel(
       factory = MusicLibraryViewModel.factory(context.applicationContext as Application),
     )
     val uiState by viewModel.uiState.collectAsState()
     val playerState by viewModel.playerState.collectAsState()
+    val musicPlaylists by viewModel.musicPlaylists.collectAsState()
+    val musicPlaylistCounts by viewModel.musicPlaylistCounts.collectAsState()
+    val favoriteSongIds by viewModel.favoriteSongIds.collectAsState()
 
     val permissionLauncher = rememberLauncherForActivityResult(
       contract = ActivityResultContracts.RequestPermission(),
@@ -142,6 +158,17 @@ object MusicLibraryScreen : Screen {
           library = state.library,
           playerState = playerState,
           onSongPlay = viewModel::playSong,
+          onOpenNowPlaying = onOpenNowPlaying,
+          playlists = musicPlaylists,
+          playlistCounts = musicPlaylistCounts,
+          favoriteIds = favoriteSongIds,
+          playlistItemsProvider = viewModel::playlistItems,
+          onCreatePlaylist = viewModel::createPlaylist,
+          onRenamePlaylist = viewModel::renamePlaylist,
+          onDeletePlaylist = viewModel::deletePlaylist,
+          onAddSongToPlaylist = viewModel::addSongToPlaylist,
+          onRemoveSongFromPlaylist = viewModel::removeSongFromPlaylist,
+          onSetFavorite = viewModel::setFavorite,
         )
       }
     }
@@ -155,15 +182,24 @@ private sealed interface MusicDetail {
 
   data class FolderDetail(val folder: MusicFolder) : MusicDetail
 
+  data class PlaylistDetail(val playlistId: Long, val playlistName: String) : MusicDetail
+
+  data object FavoritesDetail : MusicDetail
+
   val title: String
     get() = when (this) {
       is AlbumDetail -> album.title
       is ArtistDetail -> artist.name
       is FolderDetail -> folder.name
+      is PlaylistDetail -> playlistName
+      is FavoritesDetail -> "Favorites"
     }
 }
 
-private val TAB_TITLES = listOf("Songs", "Albums", "Artists", "Folders")
+// The Playlists tab is appended LAST (Phase E): tab indices are remembered
+// across app restarts, so inserting a tab in the middle would silently
+// move returning users to a different tab than the one they left.
+private val TAB_TITLES = listOf("Songs", "Albums", "Artists", "Folders", "Playlists")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -171,6 +207,17 @@ private fun MusicLibraryContent(
   library: MusicLibrary,
   playerState: MusicPlayerState,
   onSongPlay: (Song, List<Song>) -> Unit,
+  onOpenNowPlaying: () -> Unit,
+  playlists: List<MusicPlaylistEntity>,
+  playlistCounts: Map<Long, Int>,
+  favoriteIds: Set<Long>,
+  playlistItemsProvider: (Long) -> Flow<List<MusicPlaylistItemEntity>>,
+  onCreatePlaylist: (String) -> Unit,
+  onRenamePlaylist: (Long, String) -> Unit,
+  onDeletePlaylist: (Long) -> Unit,
+  onAddSongToPlaylist: (Long, Song) -> Unit,
+  onRemoveSongFromPlaylist: (Long, Long) -> Unit,
+  onSetFavorite: (Song, Boolean) -> Unit,
 ) {
   var selectedTab by rememberSaveable { mutableIntStateOf(0) }
   var query by rememberSaveable { mutableStateOf("") }
@@ -182,16 +229,20 @@ private fun MusicLibraryContent(
 
   val bottomPadding = LocalNavigationBarHeight.current + 16.dp
 
-  var nowPlayingOpen by remember { mutableStateOf(false) }
+  // Tapping a song plays it and opens Now Playing, as in Phase D; since
+  // Phase E the screen itself is hosted by MainScreen (see Content above).
   val onSongClick: (Song, List<Song>) -> Unit = { song, contextSongs ->
     onSongPlay(song, contextSongs)
-    nowPlayingOpen = true
+    onOpenNowPlaying()
   }
 
-  if (nowPlayingOpen) {
-    NowPlayingScreen(onClose = { nowPlayingOpen = false })
-    return
+  // Phase E: favorites toggling and the add-to-playlist chooser, shared by
+  // every song list in this screen.
+  val onToggleFavorite: (Song) -> Unit = { song ->
+    onSetFavorite(song, song.id !in favoriteIds)
   }
+  var playlistPickerSong by remember { mutableStateOf<Song?>(null) }
+  val onAddToPlaylistClick: (Song) -> Unit = { song -> playlistPickerSong = song }
 
   BackHandler(enabled = detail != null) {
     detail = null
@@ -211,14 +262,14 @@ private fun MusicLibraryContent(
           },
           actions = {
             if (detail == null && playerState.currentSongId != null) {
-              IconButton(onClick = { nowPlayingOpen = true }) {
+              IconButton(onClick = onOpenNowPlaying) {
                 Icon(
                   imageVector = Icons.Filled.MusicNote,
                   contentDescription = "Now playing",
                 )
               }
             }
-            if (detail == null && library.songs.isNotEmpty()) {
+            if (detail == null && library.songs.isNotEmpty() && selectedTab != 4) {
               IconButton(
                 onClick = {
                   searchActive = !searchActive
@@ -269,7 +320,9 @@ private fun MusicLibraryContent(
               singleLine = true,
             )
           }
-          TabRow(selectedTabIndex = selectedTab) {
+          // Scrollable: with five tabs a fixed row squeezes the labels
+          // until they wrap onto two lines and look pushed down.
+          ScrollableTabRow(selectedTabIndex = selectedTab, edgePadding = 0.dp) {
             TAB_TITLES.forEachIndexed { index, title ->
               Tab(
                 selected = selectedTab == index,
@@ -289,11 +342,36 @@ private fun MusicLibraryContent(
     ) {
       val currentDetail = detail
       when {
+        currentDetail is MusicDetail.PlaylistDetail -> {
+          PlaylistDetailContent(
+            itemsFlow = playlistItemsProvider(currentDetail.playlistId),
+            library = library,
+            onSongClick = onSongClick,
+            onRemoveSong = { songId ->
+              onRemoveSongFromPlaylist(currentDetail.playlistId, songId)
+            },
+            bottomPadding = bottomPadding,
+          )
+        }
+
+        currentDetail is MusicDetail.FavoritesDetail -> {
+          FavoritesDetailContent(
+            library = library,
+            favoriteIds = favoriteIds,
+            onSongClick = onSongClick,
+            onToggleFavorite = onToggleFavorite,
+            bottomPadding = bottomPadding,
+          )
+        }
+
         currentDetail != null -> {
           DetailContent(
             detail = currentDetail,
             library = library,
             onSongClick = onSongClick,
+            favoriteIds = favoriteIds,
+            onToggleFavorite = onToggleFavorite,
+            onAddToPlaylistClick = onAddToPlaylistClick,
             bottomPadding = bottomPadding,
           )
         }
@@ -308,14 +386,42 @@ private fun MusicLibraryContent(
 
         else -> {
           when (selectedTab) {
-            0 -> SongsTab(library, query, songSort, ascending, onSongClick, bottomPadding)
+            0 -> SongsTab(
+              library, query, songSort, ascending, onSongClick, bottomPadding,
+              favoriteIds, onToggleFavorite, onAddToPlaylistClick,
+            )
             1 -> AlbumsTab(library, query, ascending, { detail = it }, bottomPadding)
             2 -> ArtistsTab(library, query, ascending, { detail = it }, bottomPadding)
-            else -> FoldersTab(library, query, ascending, { detail = it }, bottomPadding)
+            3 -> FoldersTab(library, query, ascending, { detail = it }, bottomPadding)
+            else -> PlaylistsTab(
+              playlists = playlists,
+              playlistCounts = playlistCounts,
+              favoritesCount = favoriteIds.size,
+              onFavoritesClick = { detail = MusicDetail.FavoritesDetail },
+              onPlaylistClick = { playlist ->
+                detail = MusicDetail.PlaylistDetail(playlist.id, playlist.name)
+              },
+              onCreatePlaylist = onCreatePlaylist,
+              onRenamePlaylist = onRenamePlaylist,
+              onDeletePlaylist = onDeletePlaylist,
+              bottomPadding = bottomPadding,
+            )
           }
         }
       }
     }
+  }
+
+  // The add-to-playlist chooser, opened from any song row in this screen.
+  playlistPickerSong?.let { song ->
+    AddToPlaylistDialog(
+      playlists = playlists,
+      onDismiss = { playlistPickerSong = null },
+      onPick = { playlist ->
+        onAddSongToPlaylist(playlist.id, song)
+        playlistPickerSong = null
+      },
+    )
   }
 }
 
@@ -396,6 +502,9 @@ private fun SongsTab(
   ascending: Boolean,
   onSongClick: (Song, List<Song>) -> Unit,
   bottomPadding: Dp,
+  favoriteIds: Set<Long>,
+  onToggleFavorite: (Song) -> Unit,
+  onAddToPlaylistClick: (Song) -> Unit,
 ) {
   val songs = MusicLibraryFilter.sortSongs(
     songs = MusicLibraryFilter.filterSongs(library.songs, query),
@@ -411,7 +520,13 @@ private fun SongsTab(
     contentPadding = PaddingValues(bottom = bottomPadding),
   ) {
     items(songs, key = { it.id }) { song ->
-      SongRow(song = song, onClick = { onSongClick(song, songs) })
+      SongRow(
+        song = song,
+        onClick = { onSongClick(song, songs) },
+        isFavorite = song.id in favoriteIds,
+        onToggleFavorite = { onToggleFavorite(song) },
+        onAddToPlaylist = { onAddToPlaylistClick(song) },
+      )
     }
   }
 }
@@ -505,12 +620,19 @@ private fun DetailContent(
   detail: MusicDetail,
   library: MusicLibrary,
   onSongClick: (Song, List<Song>) -> Unit,
+  favoriteIds: Set<Long>,
+  onToggleFavorite: (Song) -> Unit,
+  onAddToPlaylistClick: (Song) -> Unit,
   bottomPadding: Dp,
 ) {
   val songs = when (detail) {
     is MusicDetail.AlbumDetail -> MusicLibraryFilter.songsInAlbum(library.songs, detail.album.id)
     is MusicDetail.ArtistDetail -> MusicLibraryFilter.songsByArtist(library.songs, detail.artist.id)
     is MusicDetail.FolderDetail -> MusicLibraryFilter.songsInFolder(library.songs, detail.folder.path)
+    // Playlist and Favorites details render in their own composables
+    // (PlaylistDetailContent / FavoritesDetailContent), never here.
+    is MusicDetail.PlaylistDetail -> emptyList()
+    is MusicDetail.FavoritesDetail -> emptyList()
   }
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
@@ -520,7 +642,13 @@ private fun DetailContent(
       DetailHeader(detail = detail)
     }
     items(songs, key = { it.id }) { song ->
-      SongRow(song = song, onClick = { onSongClick(song, songs) })
+      SongRow(
+        song = song,
+        onClick = { onSongClick(song, songs) },
+        isFavorite = song.id in favoriteIds,
+        onToggleFavorite = { onToggleFavorite(song) },
+        onAddToPlaylist = { onAddToPlaylistClick(song) },
+      )
     }
   }
 }
@@ -603,6 +731,11 @@ private fun DetailHeader(detail: MusicDetail) {
         )
       }
     }
+
+    // Playlist and Favorites details have their own content composables
+    // and never reach this header.
+    is MusicDetail.PlaylistDetail -> Unit
+    is MusicDetail.FavoritesDetail -> Unit
   }
 }
 

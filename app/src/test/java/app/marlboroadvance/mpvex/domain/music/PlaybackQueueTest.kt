@@ -64,4 +64,43 @@ class PlaybackQueueTest {
     assertEquals(listOf(30L, 10L, 20L), plan?.songs?.map { it.id })
     assertEquals(1, plan?.startIndex)
   }
+
+  @Test
+  fun `moved brings an element forward`() {
+    val durations = listOf(100L, 200L, 300L, 400L)
+    assertEquals(listOf(200L, 300L, 100L, 400L), PlaybackQueue.moved(durations, 0, 2))
+  }
+
+  @Test
+  fun `moved brings an element backward`() {
+    val durations = listOf(100L, 200L, 300L, 400L)
+    assertEquals(listOf(100L, 400L, 200L, 300L), PlaybackQueue.moved(durations, 3, 1))
+  }
+
+  @Test
+  fun `moved with the same index changes nothing`() {
+    val durations = listOf(100L, 200L, 300L)
+    assertEquals(durations, PlaybackQueue.moved(durations, 1, 1))
+  }
+
+  @Test
+  fun `moved with invalid indices changes nothing`() {
+    val durations = listOf(100L, 200L, 300L)
+    assertEquals(durations, PlaybackQueue.moved(durations, -1, 1))
+    assertEquals(durations, PlaybackQueue.moved(durations, 0, 3))
+    assertEquals(durations, PlaybackQueue.moved(durations, 5, 0))
+  }
+
+  @Test
+  fun `removedAt drops the element and keeps the rest in order`() {
+    val durations = listOf(100L, 200L, 300L)
+    assertEquals(listOf(100L, 300L), PlaybackQueue.removedAt(durations, 1))
+  }
+
+  @Test
+  fun `removedAt with an invalid index changes nothing`() {
+    val durations = listOf(100L, 200L, 300L)
+    assertEquals(durations, PlaybackQueue.removedAt(durations, -1))
+    assertEquals(durations, PlaybackQueue.removedAt(durations, 3))
+  }
 }

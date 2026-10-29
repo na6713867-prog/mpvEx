@@ -42,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,11 +54,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import app.marlboroadvance.mpvex.playback.MusicPlayerController
 import app.marlboroadvance.mpvex.presentation.Screen
 import app.marlboroadvance.mpvex.ui.browser.folderlist.FolderListScreen
 import app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkStreamingScreen
 import app.marlboroadvance.mpvex.ui.browser.profile.ProfileScreen
+import app.marlboroadvance.mpvex.ui.music.MiniPlayerBar
+import app.marlboroadvance.mpvex.ui.music.MiniPlayerBarExtraHeight
 import app.marlboroadvance.mpvex.ui.music.MusicLibraryScreen
+import app.marlboroadvance.mpvex.ui.music.NowPlayingScreen
 import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -127,37 +132,79 @@ object MainScreen : Screen {
 
     val hideNavigationBar by _shouldHideNavigationBar.collectAsState()
 
+    // Music mini-player (Phase E): the controller is process-wide, so the
+    // bar can live here and stay visible on every tab while a song is
+    // loaded. Now Playing is hosted at this level for the same reason.
+    val musicController = remember { MusicPlayerController.getInstance(context) }
+    val playerState by musicController.state.collectAsState()
+    var nowPlayingOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+      musicController.connect()
+    }
+    val miniPlayerVisible = playerState.currentSongId != null && !nowPlayingOpen
+
     // Update persistent state whenever tab changes
     LaunchedEffect(selectedTab) {
       persistentSelectedTab = selectedTab
+    }
+
+    if (nowPlayingOpen) {
+      NowPlayingScreen(onClose = { nowPlayingOpen = false })
+      return
     }
 
     // Scaffold with bottom navigation bar
     Scaffold(
       modifier = Modifier.fillMaxSize(),
       bottomBar = {
-        // Animated bottom navigation bar with slide animations
-        AnimatedVisibility(
-          visible = !hideNavigationBar,
-          enter = slideInVertically(
-            animationSpec = tween(durationMillis = 300),
-            initialOffsetY = { fullHeight -> fullHeight }
-          ),
-          exit = slideOutVertically(
-            animationSpec = tween(durationMillis = 300),
-            targetOffsetY = { fullHeight -> fullHeight }
-          )
-        ) {
-          PillNavigationBar(
-            selectedTab = selectedTab,
-            onSelect = { selectedTab = it }
-          )
+        Column {
+          // Mini-player above the pill bar; it hides together with the bar
+          // (e.g. during video selection mode).
+          AnimatedVisibility(
+            visible = miniPlayerVisible && !hideNavigationBar,
+            enter = slideInVertically(
+              animationSpec = tween(durationMillis = 300),
+              initialOffsetY = { fullHeight -> fullHeight }
+            ),
+            exit = slideOutVertically(
+              animationSpec = tween(durationMillis = 300),
+              targetOffsetY = { fullHeight -> fullHeight }
+            )
+          ) {
+            MiniPlayerBar(
+              state = playerState,
+              onPlayPause = { musicController.togglePlayPause() },
+              onClick = { nowPlayingOpen = true }
+            )
+          }
+          // Animated bottom navigation bar with slide animations
+          AnimatedVisibility(
+            visible = !hideNavigationBar,
+            enter = slideInVertically(
+              animationSpec = tween(durationMillis = 300),
+              initialOffsetY = { fullHeight -> fullHeight }
+            ),
+            exit = slideOutVertically(
+              animationSpec = tween(durationMillis = 300),
+              targetOffsetY = { fullHeight -> fullHeight }
+            )
+          ) {
+            PillNavigationBar(
+              selectedTab = selectedTab,
+              onSelect = { selectedTab = it }
+            )
+          }
         }
       }
     ) { paddingValues ->
       Box(modifier = Modifier.fillMaxSize()) {
-        // Always use 96dp bottom padding regardless of navigation bar visibility
-        val fabBottomPadding = 96.dp
+        // Bottom padding for tab content: 96dp for the pill bar, plus the
+        // mini-player's height while it is visible.
+        val fabBottomPadding = if (miniPlayerVisible && !hideNavigationBar) {
+          96.dp + MiniPlayerBarExtraHeight
+        } else {
+          96.dp
+        }
 
         AnimatedContent(
           targetState = selectedTab,
@@ -225,7 +272,9 @@ object MainScreen : Screen {
           ) {
             when (targetTab) {
               0 -> FolderListScreen.Content()
-              1 -> MusicLibraryScreen.Content()
+              1 -> MusicLibraryScreen.Content(
+                onOpenNowPlaying = { nowPlayingOpen = true }
+              )
               2 -> NetworkStreamingScreen.Content()
               3 -> ProfileScreen.Content()
             }
