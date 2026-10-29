@@ -96,8 +96,13 @@ class MusicLibraryViewModel(application: Application) : AndroidViewModel(applica
       val library = withContext(Dispatchers.IO) { repository.loadLibrary() }
       _uiState.value = MusicUiState.Loaded(library)
       // Drop playlist/favorite entries for songs that left the device.
+      // Housekeeping only: a storage error here must never crash the app.
       val validIds = library.songs.map { it.id }.toSet()
-      withContext(Dispatchers.IO) { playlistRepository.cleanup(validIds) }
+      try {
+        withContext(Dispatchers.IO) { playlistRepository.cleanup(validIds) }
+      } catch (e: Exception) {
+        // Ignored: the stored playlists stay as they are.
+      }
     }
   }
 
@@ -120,34 +125,45 @@ class MusicLibraryViewModel(application: Application) : AndroidViewModel(applica
   fun playlistItems(playlistId: Long): Flow<List<MusicPlaylistItemEntity>> =
     playlistRepository.items(playlistId)
 
+  /**
+   * Playlist writes run guarded: they are launched without a handler, so an
+   * uncaught storage error (for example a foreign-key failure when a song
+   * is added to a playlist that was just deleted) would crash the app.
+   */
+  private fun launchPlaylistWrite(block: suspend () -> Unit) {
+    viewModelScope.launch(Dispatchers.IO) {
+      try {
+        block()
+      } catch (e: Exception) {
+        // Ignored: the UI keeps showing the last stored state.
+      }
+    }
+  }
+
   fun createPlaylist(name: String) {
     if (name.isBlank()) return
-    viewModelScope.launch(Dispatchers.IO) { playlistRepository.createPlaylist(name) }
+    launchPlaylistWrite { playlistRepository.createPlaylist(name) }
   }
 
   fun renamePlaylist(id: Long, name: String) {
     if (name.isBlank()) return
-    viewModelScope.launch(Dispatchers.IO) { playlistRepository.renamePlaylist(id, name) }
+    launchPlaylistWrite { playlistRepository.renamePlaylist(id, name) }
   }
 
   fun deletePlaylist(id: Long) {
-    viewModelScope.launch(Dispatchers.IO) { playlistRepository.deletePlaylist(id) }
+    launchPlaylistWrite { playlistRepository.deletePlaylist(id) }
   }
 
   fun addSongToPlaylist(playlistId: Long, song: Song) {
-    viewModelScope.launch(Dispatchers.IO) { playlistRepository.addSong(playlistId, song) }
+    launchPlaylistWrite { playlistRepository.addSong(playlistId, song) }
   }
 
   fun removeSongFromPlaylist(playlistId: Long, songId: Long) {
-    viewModelScope.launch(Dispatchers.IO) {
-      playlistRepository.removeSong(playlistId, songId)
-    }
+    launchPlaylistWrite { playlistRepository.removeSong(playlistId, songId) }
   }
 
   fun setFavorite(song: Song, favorite: Boolean) {
-    viewModelScope.launch(Dispatchers.IO) {
-      playlistRepository.setFavorite(song.id, favorite)
-    }
+    launchPlaylistWrite { playlistRepository.setFavorite(song.id, favorite) }
   }
 
   companion object {
