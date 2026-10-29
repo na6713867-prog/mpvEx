@@ -29,4 +29,29 @@ object PlaybackQueue {
     val index = context.indexOfFirst { it.id == tapped.id }
     return Plan(songs = context, startIndex = if (index >= 0) index else 0)
   }
+
+  /**
+   * Returns [list] with the element at [fromIndex] moved to [toIndex]
+   * (Phase E queue reordering). Invalid indices return the list unchanged,
+   * so a stale UI index can never corrupt the queue.
+   */
+  fun <T> moved(list: List<T>, fromIndex: Int, toIndex: Int): List<T> {
+    if (fromIndex !in list.indices || toIndex !in list.indices) return list
+    if (fromIndex == toIndex) return list
+    val mutable = list.toMutableList()
+    val element = mutable.removeAt(fromIndex)
+    mutable.add(toIndex, element)
+    return mutable
+  }
+
+  /**
+   * Returns [list] without the element at [index] (Phase E queue editing).
+   * An invalid index returns the list unchanged.
+   */
+  fun <T> removedAt(list: List<T>, index: Int): List<T> {
+    if (index !in list.indices) return list
+    val mutable = list.toMutableList()
+    mutable.removeAt(index)
+    return mutable
+  }
 }
