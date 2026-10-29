@@ -45,7 +45,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -320,7 +320,9 @@ private fun MusicLibraryContent(
               singleLine = true,
             )
           }
-          TabRow(selectedTabIndex = selectedTab) {
+          // Scrollable: with five tabs a fixed row squeezes the labels
+          // until they wrap onto two lines and look pushed down.
+          ScrollableTabRow(selectedTabIndex = selectedTab, edgePadding = 0.dp) {
             TAB_TITLES.forEachIndexed { index, title ->
               Tab(
                 selected = selectedTab == index,
