@@ -12,19 +12,29 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
-import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -34,16 +44,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import app.marlboroadvance.mpvex.presentation.Screen
 import app.marlboroadvance.mpvex.ui.browser.folderlist.FolderListScreen
 import app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkStreamingScreen
-import app.marlboroadvance.mpvex.ui.browser.playlist.PlaylistScreen
-import app.marlboroadvance.mpvex.ui.browser.recentlyplayed.RecentlyPlayedScreen
+import app.marlboroadvance.mpvex.ui.browser.profile.ProfileScreen
 import app.marlboroadvance.mpvex.ui.music.MusicLibraryScreen
 import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -106,7 +119,7 @@ object MainScreen : Screen {
   @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
   override fun Content() {
     var selectedTab by remember {
-      mutableIntStateOf(persistentSelectedTab)
+      mutableIntStateOf(persistentSelectedTab.coerceIn(0, 3))
     }
 
     val context = LocalContext.current
@@ -135,54 +148,16 @@ object MainScreen : Screen {
             targetOffsetY = { fullHeight -> fullHeight }
           )
         ) {
-          NavigationBar(
-            modifier = Modifier
-              .clip(
-                RoundedCornerShape(
-                  topStart = 28.dp,
-                  topEnd = 28.dp,
-                  bottomStart = 0.dp,
-                  bottomEnd = 0.dp
-                )
-              )
-          ) {
-            NavigationBarItem(
-              icon = { Icon(Icons.Filled.Home, contentDescription = "Home") },
-              label = { Text("Home") },
-              selected = selectedTab == 0,
-              onClick = { selectedTab = 0 }
-            )
-            NavigationBarItem(
-              icon = { Icon(Icons.Filled.MusicNote, contentDescription = "Music") },
-              label = { Text("Music") },
-              selected = selectedTab == 1,
-              onClick = { selectedTab = 1 }
-            )
-            NavigationBarItem(
-              icon = { Icon(Icons.Filled.History, contentDescription = "Recents") },
-              label = { Text("Recents") },
-              selected = selectedTab == 2,
-              onClick = { selectedTab = 2 }
-            )
-            NavigationBarItem(
-              icon = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, contentDescription = "Playlists") },
-              label = { Text("Playlists") },
-              selected = selectedTab == 3,
-              onClick = { selectedTab = 3 }
-            )
-            NavigationBarItem(
-              icon = { Icon(Icons.Filled.Language, contentDescription = "Network") },
-              label = { Text("Network") },
-              selected = selectedTab == 4,
-              onClick = { selectedTab = 4 }
-            )
-          }
+          PillNavigationBar(
+            selectedTab = selectedTab,
+            onSelect = { selectedTab = it }
+          )
         }
       }
     ) { paddingValues ->
       Box(modifier = Modifier.fillMaxSize()) {
-        // Always use 80dp bottom padding regardless of navigation bar visibility
-        val fabBottomPadding = 80.dp
+        // Always use 96dp bottom padding regardless of navigation bar visibility
+        val fabBottomPadding = 96.dp
 
         AnimatedContent(
           targetState = selectedTab,
@@ -251,9 +226,8 @@ object MainScreen : Screen {
             when (targetTab) {
               0 -> FolderListScreen.Content()
               1 -> MusicLibraryScreen.Content()
-              2 -> RecentlyPlayedScreen.Content()
-              3 -> PlaylistScreen.Content()
-              4 -> NetworkStreamingScreen.Content()
+              2 -> NetworkStreamingScreen.Content()
+              3 -> ProfileScreen.Content()
             }
           }
         }
@@ -264,3 +238,102 @@ object MainScreen : Screen {
 
 // CompositionLocal for navigation bar height
 val LocalNavigationBarHeight = compositionLocalOf { 0.dp }
+
+/**
+ * Floating pill-shaped bottom navigation bar with four tabs
+ * (Home, Music, Network, Profile), following the owner's reference design:
+ * a rounded bar floating above the content, with the selected tab shown as
+ * a filled pill highlight behind its icon and label.
+ */
+@Composable
+private fun PillNavigationBar(
+  selectedTab: Int,
+  onSelect: (Int) -> Unit
+) {
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .windowInsetsPadding(WindowInsets.navigationBars)
+      .padding(horizontal = 16.dp, vertical = 10.dp)
+  ) {
+    Surface(
+      modifier = Modifier.fillMaxWidth(),
+      shape = RoundedCornerShape(percent = 50),
+      color = MaterialTheme.colorScheme.surfaceContainerHigh,
+      tonalElevation = 6.dp,
+      shadowElevation = 6.dp
+    ) {
+      Row(
+        modifier = Modifier.padding(6.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        PillTab(
+          icon = Icons.Filled.Home,
+          label = "Home",
+          selected = selectedTab == 0,
+          onClick = { onSelect(0) }
+        )
+        PillTab(
+          icon = Icons.Filled.MusicNote,
+          label = "Music",
+          selected = selectedTab == 1,
+          onClick = { onSelect(1) }
+        )
+        PillTab(
+          icon = Icons.Filled.Language,
+          label = "Network",
+          selected = selectedTab == 2,
+          onClick = { onSelect(2) }
+        )
+        PillTab(
+          icon = Icons.Filled.AccountCircle,
+          label = "Profile",
+          selected = selectedTab == 3,
+          onClick = { onSelect(3) }
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun RowScope.PillTab(
+  icon: ImageVector,
+  label: String,
+  selected: Boolean,
+  onClick: () -> Unit
+) {
+  val contentColor = if (selected) {
+    MaterialTheme.colorScheme.onSecondaryContainer
+  } else {
+    MaterialTheme.colorScheme.onSurfaceVariant
+  }
+  Column(
+    modifier = Modifier
+      .weight(1f)
+      .clip(RoundedCornerShape(percent = 50))
+      .background(
+        if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+      )
+      .selectable(
+        selected = selected,
+        role = Role.Tab,
+        onClick = onClick
+      )
+      .padding(vertical = 8.dp),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.Center
+  ) {
+    Icon(
+      imageVector = icon,
+      contentDescription = label,
+      tint = contentColor
+    )
+    Text(
+      text = label,
+      style = MaterialTheme.typography.labelMedium,
+      color = contentColor
+    )
+  }
+}
