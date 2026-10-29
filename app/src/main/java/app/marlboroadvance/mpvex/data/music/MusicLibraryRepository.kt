@@ -1,10 +1,13 @@
 package app.marlboroadvance.mpvex.data.music
 
 import android.content.Context
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import app.marlboroadvance.mpvex.domain.music.MusicLibrary
 import app.marlboroadvance.mpvex.domain.music.Song
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Reads the local music library from Android's MediaStore.
@@ -99,7 +102,39 @@ class MusicLibraryRepository(context: Context) {
         )
       }
     }
-    return songs
+    // Some files carry no duration in MediaStore (0). Without a duration the
+    // player can show no total time and the seek bar stays disabled, so for
+    // those songs only, read the duration from the file itself.
+    return songs.map { song ->
+      if (song.durationMs > 0L) {
+        song
+      } else {
+        song.copy(durationMs = extractedDurationMs(song))
+      }
+    }
+  }
+
+  /**
+   * The duration of [song] read from the file's own metadata, or 0 when the
+   * file does not declare one. Results are cached for the process lifetime
+   * so each file is probed at most once, however often the library reloads.
+   */
+  private fun extractedDurationMs(song: Song): Long {
+    extractedDurationsMs[song.id]?.let { return it }
+    val extracted = try {
+      val retriever = MediaMetadataRetriever()
+      try {
+        retriever.setDataSource(appContext, Uri.parse(song.uri))
+        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+          ?.toLongOrNull() ?: 0L
+      } finally {
+        runCatching { retriever.release() }
+      }
+    } catch (e: Exception) {
+      0L
+    }
+    extractedDurationsMs[song.id] = extracted
+    return extracted
   }
 
   /** The full library: songs plus the albums, artists and folders in them. */
@@ -122,5 +157,8 @@ class MusicLibraryRepository(context: Context) {
     const val UNKNOWN_TITLE = "Unknown title"
     const val UNKNOWN_ARTIST = "Unknown artist"
     const val UNKNOWN_ALBUM = "Unknown album"
+
+    /** Durations extracted from files whose MediaStore duration was 0. */
+    val extractedDurationsMs = ConcurrentHashMap<Long, Long>()
   }
 }
