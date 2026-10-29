@@ -190,6 +190,7 @@ dependencies {
   implementation(libs.mediasession)
   implementation(libs.media3.exoplayer)
   implementation(libs.media3.session)
+  testImplementation(libs.junit)
   implementation(libs.androidx.documentfile)
   implementation(libs.saveable)
 
