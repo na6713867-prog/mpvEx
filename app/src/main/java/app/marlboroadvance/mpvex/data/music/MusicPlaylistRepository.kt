@@ -82,17 +82,17 @@ class MusicPlaylistRepository(context: Context) {
    * Removes playlist entries and favorites whose song id is not in
    * [validSongIds] (the current library scan). Very large libraries skip
    * the SQL NOT IN cleanup rather than risk an oversized query.
+   *
+   * An empty scan is never trusted: MediaStore can briefly return no songs
+   * at all (a rescan in progress, a permission race), and deleting every
+   * entry on such a scan would silently wipe the user's playlists and
+   * favorites. An empty [validSongIds] therefore cleans nothing.
    */
   suspend fun cleanup(validSongIds: Set<Long>) {
-    when {
-      validSongIds.isEmpty() -> {
-        dao.deleteAllItems()
-        dao.deleteAllFavorites()
-      }
-      validSongIds.size <= MAX_CLEANUP_IDS -> {
-        dao.deleteStaleItems(validSongIds)
-        dao.deleteStaleFavorites(validSongIds)
-      }
+    if (validSongIds.isEmpty()) return
+    if (validSongIds.size <= MAX_CLEANUP_IDS) {
+      dao.deleteStaleItems(validSongIds)
+      dao.deleteStaleFavorites(validSongIds)
     }
   }
 
