@@ -61,6 +61,9 @@ class MusicPlayerController private constructor(context: Context) {
   private var controller: MediaController? = null
   private var pendingQueue: PendingQueue? = null
 
+  /** MediaStore durations of the current queue, parallel to the player's items. */
+  private var queueDurationsMs: List<Long> = emptyList()
+
   private val _state = MutableStateFlow(MusicPlayerState())
   val state: StateFlow<MusicPlayerState> = _state.asStateFlow()
 
@@ -159,6 +162,7 @@ class MusicPlayerController private constructor(context: Context) {
     val items = pending.songs.map { song ->
       song.toMediaItem(pending.artworkUriByAlbumId[song.albumId])
     }
+    queueDurationsMs = pending.songs.map { it.durationMs }
     player.setMediaItems(items, pending.startIndex, 0L)
     player.prepare()
     player.play()
@@ -192,7 +196,13 @@ class MusicPlayerController private constructor(context: Context) {
       isPlaying = player.isPlaying,
       isBuffering = player.playbackState == Player.STATE_BUFFERING,
       positionMs = player.currentPosition.coerceAtLeast(0L),
-      durationMs = player.duration.takeUnless { it == C.TIME_UNSET } ?: 0L,
+      // Some files (e.g. MP3s without a length header) do not reveal their
+      // duration to the player. Fall back to the duration MediaStore knows,
+      // so the seek bar still works for those songs.
+      durationMs = player.duration
+        .takeUnless { it == C.TIME_UNSET || it <= 0L }
+        ?: queueDurationsMs.getOrNull(player.currentMediaItemIndex)?.takeIf { it > 0L }
+        ?: 0L,
       hasNext = player.hasNextMediaItem(),
       hasPrevious = player.hasPreviousMediaItem(),
     )
