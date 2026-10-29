@@ -7,7 +7,7 @@ import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.session.DefaultMediaNotification
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import app.marlboroadvance.mpvex.R
@@ -59,7 +59,7 @@ class MusicPlaybackService : MediaSessionService() {
     )
 
     setMediaNotificationProvider(
-      DefaultMediaNotification.Provider.Builder(this)
+      DefaultMediaNotificationProvider.Builder(this)
         .setChannelId(MUSIC_CHANNEL_ID)
         .setNotificationId(MUSIC_NOTIFICATION_ID)
         .setChannelName(R.string.music_playback_channel_name)
