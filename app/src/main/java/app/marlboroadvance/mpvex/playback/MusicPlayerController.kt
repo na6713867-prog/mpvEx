@@ -79,11 +79,17 @@ class MusicPlayerController private constructor(context: Context) {
   /** Connects to the playback service. Safe to call repeatedly. */
   fun connect() {
     if (controllerFuture != null) return
-    val token = SessionToken(
-      appContext,
-      ComponentName(appContext, MusicPlaybackService::class.java),
-    )
-    val future = MediaController.Builder(appContext, token).buildAsync()
+    val future = try {
+      val token = SessionToken(
+        appContext,
+        ComponentName(appContext, MusicPlaybackService::class.java),
+      )
+      MediaController.Builder(appContext, token).buildAsync()
+    } catch (e: Exception) {
+      // A session configuration problem must never crash the Music tab;
+      // leave the player disconnected so a later connect() can retry.
+      return
+    }
     controllerFuture = future
     Futures.addCallback(
       future,
