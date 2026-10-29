@@ -1,0 +1,41 @@
+name: Unit Tests (Phase B2)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/unit-tests.yml"
+      - "app/src/main/java/app/marlboroadvance/mpvex/data/music/**"
+      - "app/src/main/java/app/marlboroadvance/mpvex/domain/music/**"
+      - "app/src/test/**"
+      - "app/build.gradle.kts"
+      - "gradle/libs.versions.toml"
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: 17
+          cache: "gradle"
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Run unit tests
+        run: ./gradlew testStandardDebugUnitTest
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: app/build/test-results/testStandardDebugUnitTest
+          if-no-files-found: warn
