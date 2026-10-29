@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -43,6 +44,7 @@ import app.marlboroadvance.mpvex.ui.browser.folderlist.FolderListScreen
 import app.marlboroadvance.mpvex.ui.browser.networkstreaming.NetworkStreamingScreen
 import app.marlboroadvance.mpvex.ui.browser.playlist.PlaylistScreen
 import app.marlboroadvance.mpvex.ui.browser.recentlyplayed.RecentlyPlayedScreen
+import app.marlboroadvance.mpvex.ui.music.MusicLibraryScreen
 import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -151,22 +153,28 @@ object MainScreen : Screen {
               onClick = { selectedTab = 0 }
             )
             NavigationBarItem(
-              icon = { Icon(Icons.Filled.History, contentDescription = "Recents") },
-              label = { Text("Recents") },
+              icon = { Icon(Icons.Filled.MusicNote, contentDescription = "Music") },
+              label = { Text("Music") },
               selected = selectedTab == 1,
               onClick = { selectedTab = 1 }
             )
             NavigationBarItem(
-              icon = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, contentDescription = "Playlists") },
-              label = { Text("Playlists") },
+              icon = { Icon(Icons.Filled.History, contentDescription = "Recents") },
+              label = { Text("Recents") },
               selected = selectedTab == 2,
               onClick = { selectedTab = 2 }
             )
             NavigationBarItem(
-              icon = { Icon(Icons.Filled.Language, contentDescription = "Network") },
-              label = { Text("Network") },
+              icon = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, contentDescription = "Playlists") },
+              label = { Text("Playlists") },
               selected = selectedTab == 3,
               onClick = { selectedTab = 3 }
+            )
+            NavigationBarItem(
+              icon = { Icon(Icons.Filled.Language, contentDescription = "Network") },
+              label = { Text("Network") },
+              selected = selectedTab == 4,
+              onClick = { selectedTab = 4 }
             )
           }
         }
@@ -242,9 +250,10 @@ object MainScreen : Screen {
           ) {
             when (targetTab) {
               0 -> FolderListScreen.Content()
-              1 -> RecentlyPlayedScreen.Content()
-              2 -> PlaylistScreen.Content()
-              3 -> NetworkStreamingScreen.Content()
+              1 -> MusicLibraryScreen.Content()
+              2 -> RecentlyPlayedScreen.Content()
+              3 -> PlaylistScreen.Content()
+              4 -> NetworkStreamingScreen.Content()
             }
           }
         }
