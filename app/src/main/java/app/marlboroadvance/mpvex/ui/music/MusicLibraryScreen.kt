@@ -88,6 +88,16 @@ object MusicLibraryScreen : Screen {
 
   @Composable
   override fun Content() {
+    Content(onOpenNowPlaying = {})
+  }
+
+  /**
+   * [onOpenNowPlaying] is supplied by MainScreen (Phase E): Now Playing is
+   * hosted there so the mini-player on every tab can open it. The no-arg
+   * override keeps the Screen interface contract.
+   */
+  @Composable
+  fun Content(onOpenNowPlaying: () -> Unit) {
     val context = LocalContext.current
     val viewModel: MusicLibraryViewModel = viewModel(
       factory = MusicLibraryViewModel.factory(context.applicationContext as Application),
@@ -142,6 +152,7 @@ object MusicLibraryScreen : Screen {
           library = state.library,
           playerState = playerState,
           onSongPlay = viewModel::playSong,
+          onOpenNowPlaying = onOpenNowPlaying,
         )
       }
     }
@@ -171,6 +182,7 @@ private fun MusicLibraryContent(
   library: MusicLibrary,
   playerState: MusicPlayerState,
   onSongPlay: (Song, List<Song>) -> Unit,
+  onOpenNowPlaying: () -> Unit,
 ) {
   var selectedTab by rememberSaveable { mutableIntStateOf(0) }
   var query by rememberSaveable { mutableStateOf("") }
@@ -182,15 +194,11 @@ private fun MusicLibraryContent(
 
   val bottomPadding = LocalNavigationBarHeight.current + 16.dp
 
-  var nowPlayingOpen by remember { mutableStateOf(false) }
+  // Tapping a song plays it and opens Now Playing, as in Phase D; since
+  // Phase E the screen itself is hosted by MainScreen (see Content above).
   val onSongClick: (Song, List<Song>) -> Unit = { song, contextSongs ->
     onSongPlay(song, contextSongs)
-    nowPlayingOpen = true
-  }
-
-  if (nowPlayingOpen) {
-    NowPlayingScreen(onClose = { nowPlayingOpen = false })
-    return
+    onOpenNowPlaying()
   }
 
   BackHandler(enabled = detail != null) {
@@ -211,7 +219,7 @@ private fun MusicLibraryContent(
           },
           actions = {
             if (detail == null && playerState.currentSongId != null) {
-              IconButton(onClick = { nowPlayingOpen = true }) {
+              IconButton(onClick = onOpenNowPlaying) {
                 Icon(
                   imageVector = Icons.Filled.MusicNote,
                   contentDescription = "Now playing",
